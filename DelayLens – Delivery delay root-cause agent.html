@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DelayLens – Delivery delay root-cause agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EBEFF2;--surface:#FFFFFF;--surface2:#F4F6F8;--ink:#0F1F2A;--muted:#566873;--line:#D2D9DF;
+  --accent:#2347E8;--accent-ink:#FFFFFF;--bad:#C93A2E;--good:#14806B;--warn:#A86B00;
+  --s1:#5B6CFF;--s2:#9AA9B8;--s3:#E0A100;--s4:#1AA38C;--s5:#D2493D;
+  --font-d:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;--font-b:"Instrument Sans","Segoe UI",system-ui,sans-serif;
+  color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D151B;--surface:#14202A;--surface2:#1A2832;--ink:#E8EEF2;--muted:#93A4B0;--line:#27374292;
+  --accent:#8AA0FF;--accent-ink:#0B1220;--bad:#FF7F73;--good:#4CC9AC;--warn:#E8B04B;
+  --s1:#7886FF;--s2:#6F8294;--s3:#E8B04B;--s4:#3CC2AA;--s5:#F0695D;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D151B;--surface:#14202A;--surface2:#1A2832;--ink:#E8EEF2;--muted:#93A4B0;--line:#273742;
+  --accent:#8AA0FF;--accent-ink:#0B1220;--bad:#FF7F73;--good:#4CC9AC;--warn:#E8B04B;
+  --s1:#7886FF;--s2:#6F8294;--s3:#E8B04B;--s4:#3CC2AA;--s5:#F0695D;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:400 15px/1.55 var(--font-b);font-variant-numeric:tabular-nums;-webkit-text-size-adjust:100%}
+h1,h2,h3{font-family:var(--font-d);margin:0;line-height:1.15;letter-spacing:-.01em}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{max-width:1320px;margin:0 auto;padding:0 20px 56px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px}
+.brand b{font:700 21px/1 var(--font-d)}
+.brand span{display:block;color:var(--muted);font-size:13px;margin-top:3px}
+.top-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:500;min-height:38px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.small{padding:5px 10px;min-height:32px;font-size:13.5px}
+.btn.good{background:var(--good);border-color:var(--good);color:#fff}
+.btn.danger{color:var(--bad)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+select.btn{padding-right:8px}
+.layout{display:grid;grid-template-columns:288px minmax(0,1fr);gap:28px;align-items:start}
+.crew{position:sticky;top:12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 14px 6px}
+.crew-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.crew-h h2{font-size:16px}
+.crew-toggle{display:none}
+.agent{display:grid;grid-template-columns:18px 1fr;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.dot{width:10px;height:10px;border-radius:50%;margin-top:6px;background:var(--line);border:1.5px solid var(--muted)}
+.agent.running .dot{background:var(--accent);border-color:var(--accent);animation:pulse 1s ease-in-out infinite}
+.agent.done .dot{background:var(--good);border-color:var(--good)}
+@keyframes pulse{50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 25%,transparent)}}
+.agent b{font-weight:600;font-size:14px}
+.agent p{margin:2px 0 0;color:var(--muted);font-size:13px;line-height:1.4}
+.agent.done p{color:var(--ink)}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:24px;overflow-x:auto}
+.tab{background:none;border:0;border-bottom:3px solid transparent;padding:10px 14px;cursor:pointer;font-weight:500;color:var(--muted);white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab:hover{color:var(--ink)}
+.lede{font-size:clamp(26px,3.4vw,40px);max-width:24em;margin-bottom:22px}
+.sub{color:var(--muted);max-width:60ch;margin:0 0 20px}
+.stats{display:flex;flex-wrap:wrap;gap:12px 40px;margin:0 0 34px;padding:0}
+.stats div{min-width:110px}
+.stats dt{color:var(--muted);font-size:13px}
+.stats dd{margin:0;font:700 28px/1.2 var(--font-d)}
+.stats dd.bad{color:var(--bad)}
+.block{margin:0 0 36px}
+.block h2{font-size:20px;margin-bottom:4px}
+.block .note{color:var(--muted);font-size:13.5px;margin:0 0 14px;max-width:70ch}
+.bars{display:grid;gap:14px}
+.barrow{display:grid;grid-template-columns:120px minmax(0,1fr);gap:12px;align-items:center}
+.barrow>span{font-size:13.5px;color:var(--muted)}
+.stack{display:flex;height:46px;border-radius:6px;overflow:hidden;background:var(--surface2)}
+.seg{display:flex;align-items:center;justify-content:center;color:#fff;font-size:12.5px;font-weight:600;min-width:0;overflow:hidden;white-space:nowrap}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:10px;font-size:13px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+.read{margin-top:12px;max-width:70ch}
+.heat-wrap{overflow-x:auto;padding-bottom:6px}
+.heat{display:grid;grid-template-columns:96px repeat(12,minmax(42px,1fr));gap:3px;min-width:640px}
+.heat .rl{font-size:13px;display:flex;align-items:center}
+.heat .cl{font-size:12px;color:var(--muted);text-align:center}
+.heat .c{height:32px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;background:var(--surface2);color:var(--muted)}
+.heat .c.hot{color:var(--ink)}
+.console{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 16px;max-width:760px}
+.console li{list-style:none;padding:9px 0;border-top:1px solid var(--line);font-size:14px}
+.console li:first-child{border-top:0}
+.console ul{margin:0;padding:0}
+.console li b{font-weight:600}
+.intro-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px 32px;margin:28px 0 0;max-width:860px}
+.intro-grid dt{font-weight:600}
+.intro-grid dd{margin:2px 0 0;color:var(--muted);font-size:14px}
+.runbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.runbar label{color:var(--muted);font-size:14px}
+.empty{padding:40px 0;color:var(--muted)}
+details.plain{border-top:1px solid var(--line);padding:10px 0}
+details.plain summary{cursor:pointer;font-weight:500}
+.cause{border-top:1px solid var(--line);padding:18px 0}
+.cause-top{display:grid;grid-template-columns:64px minmax(0,1fr);gap:16px}
+.pctbig{font:700 30px/1 var(--font-d)}
+.cause h3{font-size:18px}
+.cause .hl{margin:4px 0 8px}
+.meter{height:8px;border-radius:4px;background:var(--surface2);overflow:hidden;margin:8px 0}
+.meter i{display:block;height:100%;background:var(--accent)}
+.meta{color:var(--muted);font-size:13.5px}
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:10px}
+.tbl th,.tbl td{text-align:left;padding:7px 10px 7px 0;border-bottom:1px solid var(--line)}
+.tbl th{color:var(--muted);font-weight:500}
+.tbl td.n,.tbl th.n{text-align:right}
+.tblwrap{overflow-x:auto}
+.fixgrid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:32px;align-items:start}
+.sumpanel{position:sticky;top:12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px}
+.sumpanel h2{font-size:17px;margin-bottom:10px}
+.before-after{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.before-after .a{font:700 34px/1 var(--font-d);color:var(--good)}
+.before-after .b{font:600 18px/1 var(--font-d);color:var(--muted);text-decoration:line-through}
+.kv{display:grid;grid-template-columns:1fr auto;gap:6px 12px;margin:14px 0 0;font-size:14px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;text-align:right;font-weight:600}
+.fine{color:var(--muted);font-size:12.5px;margin-top:12px}
+.lever{border-top:1px solid var(--line);padding:18px 0}
+.lever-h{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.lever-h label{font:600 17px/1.3 var(--font-d)}
+.lever-h output{font-weight:600;white-space:nowrap}
+.lever input[type=range]{width:100%;margin:12px 0 6px;accent-color:var(--accent)}
+.hint{margin:0 0 10px;color:var(--muted);font-size:13.5px;max-width:64ch}
+.lever-foot{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chip{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12.5px;font-weight:600;background:var(--surface2);color:var(--muted)}
+.chip.pending{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.chip.approved,.chip.auto{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.chip.rejected{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.risk{font-size:12.5px;color:var(--muted)}
+.fixbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.chat{max-width:780px}
+.msgs{display:grid;gap:12px;margin-bottom:16px}
+.msg{padding:12px 14px;border-radius:8px;max-width:92%;white-space:pre-wrap}
+.msg.u{background:var(--accent);color:var(--accent-ink);justify-self:end}
+.msg.a{background:var(--surface);border:1px solid var(--line)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.chips button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;cursor:pointer;font-size:13.5px}
+.chips button:hover{border-color:var(--accent)}
+.askbar{display:flex;gap:8px}
+.askbar textarea{flex:1;min-height:44px;resize:vertical;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:10px 12px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:6px;font-size:14px;z-index:9}
+@media (max-width:960px){
+  .layout{grid-template-columns:minmax(0,1fr)}
+  .crew{position:static}
+  .crew-toggle{display:inline-block}
+  .crew.collapsed .crew-list{display:none}
+  .fixgrid{grid-template-columns:minmax(0,1fr)}
+  .sumpanel{position:static;order:-1}
+  .barrow{grid-template-columns:1fr}
+}
+@media (max-width:520px){.app{padding:0 14px 48px}.cause-top{grid-template-columns:1fr}.stats dd{font-size:24px}}
+@media (prefers-reduced-motion:reduce){.agent.running .dot{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="13" fill="none" stroke="var(--ink)" stroke-width="3"/><path d="M17 8v9l6 4" fill="none" stroke="var(--bad)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div><b>DelayLens</b><span>Finds why orders arrive late and tests the fix</span></div>
+    </div>
+    <div class="top-right">
+      <label for="role" class="meta">Signed in as</label>
+      <select id="role" class="btn"><option value="analyst">Operations analyst</option><option value="manager">Operations manager</option></select>
+      <button class="btn primary" id="runBtn">Run analysis</button>
+    </div>
+  </header>
+  <div class="layout">
+    <aside class="crew collapsed" id="crew"></aside>
+    <main>
+      <nav class="tabs" role="tablist" id="tabs"></nav>
+      <section id="view" aria-live="polite"></section>
+    </main>
+  </div>
+</div>
+<script>
+/* ===== ENGINE: synthetic data + analysis agents ===== */
+const SCALE = 20, PROD = 8, DAYS = 14, TARGET_UTIL = 0.85;
+const COST = { lateOrder: 180, staffShift: 900, skuMove: 2500, trip: 1500, carrierOrder: 6 };
+function rng(seed){let a=seed>>>0;return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const WH = [
+  {id:'DEL',name:'Delhi NCR',x:700,y:1700,staff:[20,34,14],cutoff:3},
+  {id:'MUM',name:'Mumbai',x:250,y:900,staff:[20,32,14],cutoff:12},
+  {id:'HYD',name:'Hyderabad',x:650,y:650,staff:[18,30,12],cutoff:2},
+  {id:'BLR',name:'Bengaluru',x:600,y:250,staff:[16,13,12],cutoff:3},
+  {id:'CHN',name:'Chennai',x:900,y:230,staff:[14,24,10],cutoff:3},
+  {id:'KOL',name:'Kolkata',x:1400,y:1100,staff:[12,22,10],cutoff:4}
+];
+const ZONES = [
+  {n:'Delhi',x:700,y:1720,w:10,car:'Kestrel Express'},{n:'Gurugram',x:680,y:1690,w:6,car:'Kestrel Express'},{n:'Jaipur',x:520,y:1520,w:4,car:'Kestrel Express'},
+  {n:'Mumbai',x:250,y:900,w:10,car:'Roadrunner'},{n:'Pune',x:330,y:830,w:6,car:'Roadrunner'},{n:'Ahmedabad',x:150,y:1250,w:4,car:'Roadrunner'},
+  {n:'Hyderabad',x:650,y:650,w:9,car:'MetroPost'},{n:'Vijayawada',x:850,y:640,w:3,car:'MetroPost'},{n:'Nagpur',x:650,y:1000,w:3,car:'Roadrunner'},
+  {n:'Bengaluru',x:600,y:250,w:10,car:'MetroPost'},{n:'Mysuru',x:520,y:150,w:3,car:'MetroPost'},
+  {n:'Chennai',x:900,y:230,w:8,car:'MetroPost'},{n:'Coimbatore',x:620,y:120,w:3,car:'MetroPost'},
+  {n:'Kolkata',x:1400,y:1100,w:7,car:'SwiftLine'},{n:'Bhubaneswar',x:1250,y:820,w:3,car:'SwiftLine'},{n:'Guwahati',x:1700,y:1300,w:3,car:'SwiftLine'}
+];
+const HOURW = [1,.6,.4,.3,.3,.5,1,2,3,3.5,3.5,3,3,3,3,3.2,3.5,4.5,6,7,7,6,4,2];
+const CATS = ['Mobiles','Home','Fashion','Beauty','Grocery','Electronics'];
+const STAGES = [['proc','Pick queue'],['pack','Pick and pack'],['disp','Dispatch wait'],['trans','Transit'],['last','Last mile']];
+const shiftOf = h => h>=6&&h<14?0:(h>=14&&h<22?1:2);
+const SHIFTN = ['morning','evening','night'];
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const med = a => {const s=[...a].sort((x,y)=>x-y);return s.length?s[Math.floor(s.length/2)]:0};
+const sum = a => a.reduce((x,y)=>x+y,0);
+const mean = a => a.length?sum(a)/a.length:0;
+
+function generate(N, seed){
+  const r = rng(seed);
+  const gauss=()=>Math.sqrt(-2*Math.log(r()+1e-12))*Math.cos(2*Math.PI*r());
+  const logN=s=>Math.exp(gauss()*s - s*s/2);
+  const cum = a => {let t=0;return a.map(v=>t+=v)};
+  const pickC = c => {const x=r()*c[c.length-1];let i=0;while(c[i]<x)i++;return i};
+  const hourC=cum(HOURW), zoneC=cum(ZONES.map(z=>z.w));
+  const NSKU=48; const skuC=cum([...Array(NSKU)].map((_,i)=>1/Math.pow(i+1,.9)));
+  const skuCat=[...Array(NSKU)].map((_,i)=>CATS[i%CATS.length]);
+  const skuName=i=>`SKU-${String(i+1).padStart(3,'0')} (${skuCat[i]})`;
+  const P = WH.map((w,k)=>[...Array(NSKU)].map((_,s)=>{
+     if((w.id==='HYD'||w.id==='CHN') && s<12) return w.id==='HYD'?.5:.55;
+     return .93+r()*.05;}));
+  ZONES.forEach(z=>{z.rank=WH.map((w,k)=>k).sort((a,b)=>dist(z,WH[a])-dist(z,WH[b]));z.nearD=dist(z,WH[z.rank[0]]);});
+  const list=[];
+  for(let i=0;i<N;i++){
+    const day=Math.floor(r()*DAYS), hour=pickC(hourC), zi=pickC(zoneC), z=ZONES[zi], sku=pickC(skuC);
+    let w=-1; for(const k of z.rank){ if(r()<P[k][sku]){w=k;break} } if(w<0) w=z.rank[z.rank.length-1];
+    list.push({id:'ORD-'+(100000+i),day,hour,z:zi,zone:z.n,sku,w,near:z.rank[0],remote:w!==z.rank[0],car:z.car,u:r()});
+  }
+  const load={}; list.forEach(o=>{const k=o.w+'|'+o.day+'|'+o.hour;load[k]=(load[k]||0)+1});
+  const L=(w,d,h)=>load[w+'|'+d+'|'+((h+24)%24)]||0;
+  list.forEach(o=>{
+    const shift=shiftOf(o.hour); o.shift=shift;
+    const l3=(L(o.w,o.day,o.hour-1)+L(o.w,o.day,o.hour)+L(o.w,o.day,o.hour+1))/3;
+    o.util=l3*SCALE/(WH[o.w].staff[shift]*PROD);
+    const zone=ZONES[o.z];
+    o.proc = 1.0*logN(.35) + (o.util>.9 ? 9*(o.util-.9)*logN(.3) : 0);
+    o.pack = 1.2*logN(.3);
+    o.disp = r()*WH[o.w].cutoff;
+    o.trans = dist(zone,WH[o.w])/45*logN(.15)+2;
+    o.transExp = zone.nearD/45+2;
+    o.last = 4.5*logN(.35) + (o.car==='SwiftLine' && (zone.n==='Kolkata'||zone.n==='Bhubaneswar'||zone.n==='Guwahati') && r()<.55 ? 7+r()*8 : 0);
+    o.promise = 13 + 1.3*o.transExp;
+    o.actual = o.proc+o.pack+o.disp+o.trans+o.last;
+    o.delay = o.actual - o.promise;
+    o.late = o.delay>0;
+  });
+  return {orders:list, skuName};
+}
+
+function analyse(data){
+  const {orders:O, skuName}=data, N=O.length;
+  const late=O.filter(o=>o.late);
+  const R={N,late:late.length,lateRate:late.length/N,delayHours:sum(late.map(o=>o.delay)),skuName};
+  R.avgLate=mean(late.map(o=>o.delay));
+  R.stageAvg={ontime:STAGES.map(([k])=>mean(O.filter(o=>!o.late).map(o=>o[k]))),late:STAGES.map(([k])=>mean(late.map(o=>o[k])))};
+  // heatmap warehouse x 2h bucket
+  R.heat=WH.map((w,k)=>[...Array(12)].map((_,b)=>{const s=O.filter(o=>o.w===k&&Math.floor(o.hour/2)===b);return {n:s.length,rate:s.length>=12?s.filter(o=>o.late).length/s.length:null}}));
+  // benchmarks
+  const medDisp=med(O.map(o=>o.disp)), medLast=med(O.map(o=>o.last)), medProc=med(O.map(o=>o.proc));
+  const dispByWh=WH.map((w,k)=>mean(O.filter(o=>o.w===k).map(o=>o.disp)));
+  const dispNet=mean(O.map(o=>o.disp));
+  const flagWh=dispByWh.map(v=>v>1.25*dispNet);
+  const cz={}; O.forEach(o=>{const k=o.car+'|'+o.zone;(cz[k]=cz[k]||[]).push(o.last)});
+  const lastNet=mean(O.map(o=>o.last));
+  const flagCZ=new Set(Object.keys(cz).filter(k=>mean(cz[k])>1.25*lastNet));
+  O.forEach(o=>{
+    o.czKey=o.car+'|'+o.zone;
+    o.x={staff:o.util>.9?Math.max(0,o.proc-medProc):0, stock:o.remote?Math.max(0,o.trans-o.transExp):0,
+         batch:flagWh[o.w]?Math.max(0,o.disp-medDisp):0, carrier:flagCZ.has(o.czKey)?Math.max(0,o.last-medLast):0};
+    o.a={staff:0,stock:0,batch:0,carrier:0,other:0};
+    if(o.late){
+      const E=o.x.staff+o.x.stock+o.x.batch+o.x.carrier;
+      if(E>=o.delay){for(const c in o.x)o.a[c]=o.delay*o.x[c]/E}
+      else{for(const c in o.x)o.a[c]=o.x[c];o.a.other=o.delay-E}
+    }
+  });
+  const tot=c=>sum(late.map(o=>o.a[c]));
+  const grp=(arr,keyf)=>{const m={};arr.forEach(o=>{const k=keyf(o);(m[k]=m[k]||[]).push(o)});return m};
+  // staffing segments
+  const sg=grp(O.filter(o=>o.util>.9),o=>o.w+'|'+o.shift);
+  const staffSegs=Object.entries(sg).map(([k,s])=>{const [w,sh]=k.split('|').map(Number);const u=mean(s.map(o=>o.util));
+     return {key:k,w,shift:sh,wh:WH[w].name,shiftName:SHIFTN[sh],orders:s.length,util:u,staff:WH[w].staff[sh],need:Math.max(1,Math.ceil(WH[w].staff[sh]*(u/TARGET_UTIL-1))),hours:sum(s.map(o=>o.a.staff)),lateRate:s.filter(o=>o.late).length/s.length}})
+     .filter(s=>s.orders>=25&&s.hours>=40).sort((a,b)=>b.hours-a.hours);
+  // stock segments
+  const kg=grp(O.filter(o=>o.remote),o=>o.sku);
+  const skuSegs=Object.entries(kg).map(([k,s])=>({sku:+k,name:skuName(+k),orders:s.length,hours:sum(s.map(o=>o.a.stock)),nearWh:mode(s.map(o=>WH[o.near].name))})).sort((a,b)=>b.hours-a.hours);
+  let cumH=0;const totStock=sum(skuSegs.map(s=>s.hours))||1;skuSegs.forEach(s=>{cumH+=s.hours;s.cum=cumH/totStock});
+  const nearSegs=Object.entries(grp(O.filter(o=>o.remote),o=>WH[o.near].name)).map(([k,s])=>({name:k,orders:s.length,share:s.length/O.filter(o=>o.near===WH.findIndex(w=>w.name===k)).length})).sort((a,b)=>b.share-a.share);
+  // batch segments
+  const batchSegs=WH.map((w,k)=>({wh:w.name,k,cutoff:w.cutoff,meanWait:dispByWh[k],flag:flagWh[k],hours:sum(late.filter(o=>o.w===k).map(o=>o.a.batch))})).filter(s=>s.flag).sort((a,b)=>b.hours-a.hours);
+  // carrier segments
+  const cgp=grp(O.filter(o=>flagCZ.has(o.czKey)),o=>o.czKey);
+  const carSegs=Object.entries(cgp).map(([k,s])=>({key:k,car:k.split('|')[0],zone:k.split('|')[1],orders:s.length,meanLast:mean(s.map(o=>o.last)),hours:sum(s.map(o=>o.a.carrier))})).sort((a,b)=>b.hours-a.hours);
+  R.lastNet=lastNet; R.dispNet=dispNet;
+  R.remoteShare=O.filter(o=>o.remote).length/N;
+  R.segs={staff:staffSegs,stock:skuSegs,near:nearSegs,batch:batchSegs,car:carSegs};
+  const top=(a)=>a[0];
+  const causes=[
+   {id:'staff',title:'Warehouse shifts running above capacity',hours:tot('staff'),
+    headline:staffSegs.length?`${staffSegs[0].wh} ${staffSegs[0].shiftName} shift runs at ${Math.round(staffSegs[0].util*100)}% load with ${staffSegs[0].staff} pickers`:'No overloaded shifts found'},
+   {id:'stock',title:'Orders shipped from a far warehouse because local stock is missing',hours:tot('stock'),
+    headline:`${(R.remoteShare*100).toFixed(0)}% of orders left a warehouse other than the nearest one; ${nearSegs[0]?nearSegs[0].name:'-'} misses stock most often`},
+   {id:'batch',title:'Slow dispatch cycles hold packed orders',hours:tot('batch'),
+    headline:batchSegs.length?`${batchSegs[0].wh} releases trucks every ${batchSegs[0].cutoff} hours; packed orders wait ${batchSegs[0].meanWait.toFixed(1)}h on average`:'No slow dispatch cycles found'},
+   {id:'carrier',title:'Carrier last-mile failures in specific zones',hours:tot('carrier'),
+    headline:carSegs.length?`${carSegs[0].car} takes ${carSegs[0].meanLast.toFixed(1)}h in ${carSegs[0].zone} versus ${lastNet.toFixed(1)}h network average`:'No weak carrier zones found'}
+  ];
+  causes.forEach(c=>{c.share=c.hours/R.delayHours;c.affected=O.filter(o=>o.x[c.id]>0).length;
+    const w=O.filter(o=>o.x[c.id]>0), wo=O.filter(o=>o.x[c.id]===0);
+    c.lateWith=w.length?w.filter(o=>o.late).length/w.length:0;c.lateWithout=wo.length?wo.filter(o=>o.late).length/wo.length:0;c.lift=c.lateWithout?c.lateWith/c.lateWithout:0;});
+  causes.sort((a,b)=>b.hours-a.hours);
+  R.causes=causes; R.otherHours=sum(late.map(o=>o.a.other)); R.otherShare=R.otherHours/R.delayHours;
+  R.O=O; return R;
+}
+function mode(a){const m={};a.forEach(x=>m[x]=(m[x]||0)+1);return Object.entries(m).sort((x,y)=>y[1]-x[1])[0][0]}
+
+/* what-if projection */
+function recommended(R){
+  const needs=R.segs.staff.slice(0,3).map(s=>s.need);
+  const flagged=R.segs.batch.length?Math.min(...R.segs.batch.map(b=>Math.max(2,Math.round(b.cutoff/2.2)))):8;
+  return {staff:Math.min(12,Math.max(...needs,0)), sku:Math.min(30,(R.segs.stock.findIndex(s=>s.cum>=.7)+1)||12), dispatch:flagged, carrier:70, eta:0};
+}
+function project(R,lv){
+  const segNeed={};R.segs.staff.forEach(s=>segNeed[s.key]=s.need);
+  const topSku=new Set(R.segs.stock.slice(0,lv.sku).map(s=>s.sku));
+  const cutoffs=R.segs.batch.reduce((m,b)=>(m[b.k]=b.cutoff,m),{});
+  let late=0,hours=0;
+  R.O.forEach(o=>{
+    let d=o.delay;
+    if(o.x.staff){const need=segNeed[o.w+'|'+o.shift]||0;if(need)d-=o.x.staff*Math.min(1,lv.staff/need)*.9}
+    if(o.x.stock&&topSku.has(o.sku))d-=o.x.stock*.9;
+    if(o.x.batch&&cutoffs[o.w]&&lv.dispatch<cutoffs[o.w])d-=o.x.batch*(1-lv.dispatch/cutoffs[o.w])*.95;
+    if(o.x.carrier&&o.u<lv.carrier/100)d-=o.x.carrier*.85;
+    if(o.remote&&lv.eta)d-=lv.eta;
+    if(d>0){late++;hours+=d}
+  });
+  const monthly=SCALE*30/DAYS;
+  const prevented=(R.late-late)*monthly; // late orders avoided per month
+  const cStaff=R.segs.staff.reduce((a,s)=>a+Math.min(lv.staff,s.need),0)*COST.staffShift*30;
+  const cSku=lv.sku*COST.skuMove;
+  let cTrips=0;R.segs.batch.forEach(b=>{if(lv.dispatch<b.cutoff)cTrips+=(16/lv.dispatch-16/b.cutoff)*COST.trip*30});
+  const carMoved=R.segs.car.reduce((a,s)=>a+s.orders,0)*lv.carrier/100*monthly;
+  const cCar=carMoved*COST.carrierOrder;
+  const cost=cStaff+cSku+cTrips+cCar;
+  const saving=prevented*COST.lateOrder;
+  return {lateRate:late/R.N,late,hours,prevented,cost,saving,net:saving-cost,costs:{staff:cStaff,stock:cSku,batch:cTrips,carrier:cCar}};
+}
+/* ===== END ENGINE ===== */
+/* ===== UI ===== */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const inr=n=>{const a=Math.abs(n);const s=a>=1e7?(a/1e7).toFixed(2)+' Cr':a>=1e5?(a/1e5).toFixed(1)+' lakh':Math.round(a).toLocaleString('en-IN');return (n<0?'-':'')+'₹'+s};
+const pc=(x,d=0)=>(x*100).toFixed(d)+'%';
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const sleep=ms=>new Promise(r=>setTimeout(r,reduce?30:ms));
+const S={tab:'overview',running:false,done:false,R:null,lv:null,rec:null,role:'analyst',appr:{},log:[],ag:{},chat:[],busy:false,orders:6000,maxCut:12};
+const stamp=()=>new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const addLog=(who,text)=>S.log.push({t:stamp(),who,text});
+function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2200)}
+
+const AGENTS=[
+ {id:'data',name:'Data agent',job:'Joins orders, warehouse, route, staffing and stock records',f:R=>`Joined ${R.N.toLocaleString('en-IN')} orders across ${WH.length} warehouses and ${ZONES.length} delivery zones.`},
+ {id:'delay',name:'Delay detection agent',job:'Measures lateness stage by stage',f:R=>{const d=R.stageAvg.late.map((v,i)=>v-R.stageAvg.ontime[i]);const i=d.indexOf(Math.max(...d));return `${pc(R.lateRate,1)} of orders were late. Biggest stage gap: ${STAGES[i][1].toLowerCase()} (+${d[i].toFixed(1)}h versus on-time orders).`}},
+ {id:'wh',name:'Warehouse agent',job:'Checks dispatch cycles and processing time',f:R=>R.segs.batch.length?`${R.segs.batch[0].wh} releases trucks every ${R.segs.batch[0].cutoff}h, so packed orders wait ${R.segs.batch[0].meanWait.toFixed(1)}h on average.`:'No slow dispatch cycles found.'},
+ {id:'staff',name:'Staffing agent',job:'Matches pickers to order load by shift',f:R=>R.segs.staff.length?`${R.segs.staff.length} shift${R.segs.staff.length>1?'s':''} ran above 90% load. Worst: ${R.segs.staff[0].wh} ${R.segs.staff[0].shiftName} at ${pc(R.segs.staff[0].util)}.`:'All shifts within capacity.'},
+ {id:'inv',name:'Inventory agent',job:'Finds stock gaps and far-warehouse shipments',f:R=>{const k=(R.segs.stock.findIndex(s=>s.cum>=.7)+1);return `${pc(R.remoteShare)} of orders shipped from a far warehouse. ${k} SKUs account for 70% of that delay.`}},
+ {id:'route',name:'Route and carrier agent',job:'Compares last-mile time by carrier and zone',f:R=>R.segs.car.length?`${R.segs.car[0].car} averages ${R.segs.car[0].meanLast.toFixed(1)}h last-mile in ${R.segs.car[0].zone} (network ${R.lastNet.toFixed(1)}h).`:'No weak carrier zones found.'},
+ {id:'root',name:'Root cause agent',job:'Ranks causes by delay hours explained',f:R=>`Top cause: ${R.causes[0].title.toLowerCase()} (${pc(R.causes[0].share)} of delay hours). Four causes explain ${pc(1-R.otherShare)}.`},
+ {id:'rec',name:'Recommendation agent',job:'Simulates fixes and estimates cost',f:R=>{const p=project(R,S.rec);return `Recommended plan cuts late orders from ${pc(R.lateRate,1)} to ${pc(p.lateRate,1)} in simulation.`}},
+ {id:'orch',name:'Orchestrator',job:'Sends each action to the right approver',f:()=>'Low-risk changes apply automatically. Staffing, stock, dispatch and carrier changes wait for a manager.'}
+];
+AGENTS.forEach(a=>S.ag[a.id]={st:'idle',txt:''});
+
+async function runAnalysis(){
+  if(S.running)return;
+  S.running=true;S.done=false;S.log=[];S.appr={};S.chat=[];S.tab='overview';
+  AGENTS.forEach(a=>S.ag[a.id]={st:'idle',txt:''});
+  const sel=$('#orders');if(sel)S.orders=+sel.value;
+  $('#runBtn').disabled=true;render();
+  const seed=Math.floor(Math.random()*90000)+10;
+  addLog('System',`Run started with ${S.orders.toLocaleString('en-IN')} orders (seed ${seed}).`);
+  for(const a of AGENTS){
+    S.ag[a.id].st='running';render();await sleep(520);
+    if(a.id==='data'){S.R=analyse(generate(S.orders,seed));S.rec=recommended(S.R);S.maxCut=Math.max(...S.R.segs.batch.map(b=>b.cutoff),8);S.lv={staff:0,sku:0,dispatch:S.maxCut,carrier:0,eta:0}}
+    const txt=a.f(S.R);S.ag[a.id]={st:'done',txt};addLog(a.name,txt);render();
+  }
+  S.running=false;S.done=true;$('#runBtn').disabled=false;$('#runBtn').textContent='Run again';render();
+}
+
+/* ---------- crew ---------- */
+function renderCrew(){
+  const el=$('#crew');
+  el.innerHTML=`<div class="crew-h"><h2>Agent crew</h2><button class="btn small crew-toggle" id="crewT" aria-expanded="${!el.classList.contains('collapsed')}">${el.classList.contains('collapsed')?'Show':'Hide'}</button></div><div class="crew-list">`+
+   AGENTS.map(a=>{const s=S.ag[a.id];return `<div class="agent ${s.st}"><span class="dot"></span><div><b>${a.name}</b><p>${esc(s.st==='done'?s.txt:a.job)}</p></div></div>`}).join('')+'</div>';
+  $('#crewT').onclick=()=>{el.classList.toggle('collapsed');renderCrew()};
+}
+const TABS=[['overview','Overview'],['causes','Root causes'],['fix','Test fixes'],['ask','Ask the agent'],['audit','Audit log']];
+function renderTabs(){
+  $('#tabs').innerHTML=TABS.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-k="${k}">${l}</button>`).join('');
+  document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{S.tab=b.dataset.k;render()});
+}
+function render(){renderCrew();renderTabs();const v=$('#view');({overview:rOverview,causes:rCauses,fix:rFix,ask:rAsk,audit:rAudit})[S.tab](v)}
+const needRun=v=>{v.innerHTML=`<div class="empty"><p>Run the analysis first. The agents build this view from your order, warehouse, route, staffing and stock data.</p><button class="btn primary" onclick="S.tab='overview';render()">Go to overview</button></div>`};
+
+/* ---------- overview ---------- */
+function rOverview(v){
+  if(S.running){v.innerHTML=`<h1 class="lede">The agents are working through your data.</h1><div class="console"><ul>${S.log.map(l=>`<li><b>${esc(l.who)}</b><br>${esc(l.text)}</li>`).join('')}</ul></div>`;return}
+  if(!S.done){
+    v.innerHTML=`<h1 class="lede">Your capacity is fine. Something else is making orders late.</h1>
+    <p class="sub">DelayLens joins your order, warehouse, route, staffing and inventory data, finds where the hours are lost, and tests fixes in simulation before anyone changes the operation.</p>
+    <div class="runbar"><label for="orders">Orders to analyse</label>
+      <select id="orders" class="btn"><option value="3000">3,000 sample orders</option><option value="6000" selected>6,000 sample orders</option><option value="12000">12,000 sample orders</option></select>
+      <button class="btn primary" id="runBtn2">Run analysis</button></div>
+    <p class="meta" style="max-width:62ch">This demo runs on simulated data with realistic patterns, so you can see how the agents reason. For a live deployment, connect the sources listed below.</p>
+    <dl class="intro-grid">
+      <div><dt>Orders and promised dates</dt><dd>Order time, SKU, delivery zone, promised and actual delivery</dd></div>
+      <div><dt>Warehouse events</dt><dd>Pick start, pack complete and dispatch scan times</dd></div>
+      <div><dt>Routes and carriers</dt><dd>Carrier, lane, transit scans and delivery attempts</dd></div>
+      <div><dt>Staff rosters</dt><dd>Pickers on shift by warehouse and hour</dd></div>
+      <div><dt>Inventory by location</dt><dd>Stock levels and transfers per warehouse</dd></div>
+      <div><dt>Customer complaints</dt><dd>Tickets linked to order ids</dd></div></dl>`;
+    $('#runBtn2').onclick=runAnalysis;return}
+  const R=S.R,top=R.causes[0];
+  const maxT=Math.max(sum(R.stageAvg.late),sum(R.stageAvg.ontime));
+  const row=(label,arr)=>`<div class="barrow"><span>${label}<br><b style="color:var(--ink)">${sum(arr).toFixed(1)}h total</b></span><div class="stack" style="width:${sum(arr)/maxT*100}%">${arr.map((x,i)=>`<div class="seg" style="flex:${x};background:var(--s${i+1})" title="${STAGES[i][1]} ${x.toFixed(1)}h">${x/maxT>.07?x.toFixed(1)+'h':''}</div>`).join('')}</div></div>`;
+  const d=R.stageAvg.late.map((x,i)=>({i,v:x-R.stageAvg.ontime[i]})).sort((a,b)=>b.v-a.v);
+  const hm=R.heat;
+  v.innerHTML=`<h1 class="lede">${pc(R.lateRate)} of orders arrived late. ${pc(top.share)} of the lost hours come from one cause: ${esc(top.title.toLowerCase())}.</h1>
+  <dl class="stats"><div><dt>Orders analysed</dt><dd>${R.N.toLocaleString('en-IN')}</dd></div><div><dt>On time</dt><dd>${pc(1-R.lateRate,1)}</dd></div><div><dt>Late orders</dt><dd class="bad">${R.late.toLocaleString('en-IN')}</dd></div><div><dt>Average lateness</dt><dd>${R.avgLate.toFixed(1)}h</dd></div><div><dt>Delay hours lost</dt><dd>${Math.round(R.delayHours).toLocaleString('en-IN')}</dd></div></dl>
+  <section class="block"><h2>Where the hours go</h2><p class="note">Average time each order spends in every stage, split by on-time and late orders.</p>
+   <div class="bars">${row('On-time orders',R.stageAvg.ontime)}${row('Late orders',R.stageAvg.late)}</div>
+   <div class="legend">${STAGES.map((s,i)=>`<span><i style="background:var(--s${i+1})"></i>${s[1]}</span>`).join('')}</div>
+   <p class="read">Late orders lose most time in <b>${STAGES[d[0].i][1].toLowerCase()}</b> (+${d[0].v.toFixed(1)}h) and <b>${STAGES[d[1].i][1].toLowerCase()}</b> (+${d[1].v.toFixed(1)}h). Pick and pack time is almost the same for both groups, so the problem sits around the warehouse floor, not on it.</p></section>
+  <section class="block"><h2>When and where orders run late</h2><p class="note">Share of orders that were late, by fulfilment warehouse and the hour the order was placed. Blank cells have fewer than 12 orders.</p>
+   <div class="heat-wrap"><div class="heat"><span></span>${[...Array(12)].map((_,b)=>`<span class="cl">${String(b*2).padStart(2,'0')}h</span>`).join('')}
+   ${hm.map((row,k)=>`<span class="rl">${WH[k].name}</span>`+row.map(c=>c.rate===null?`<span class="c">–</span>`:`<span class="c hot" style="background:color-mix(in srgb,var(--bad) ${Math.round(Math.min(1,c.rate/.75)*85)}%,var(--surface2))" title="${c.n} orders">${Math.round(c.rate*100)}%</span>`).join('')).join('')}</div></div></section>
+  <details class="plain"><summary>Run log</summary><div class="console" style="margin-top:10px"><ul>${S.log.map(l=>`<li><b>${esc(l.who)}</b> · ${l.t}<br>${esc(l.text)}</li>`).join('')}</ul></div></details>`;
+}
+
+/* ---------- causes ---------- */
+function rCauses(v){
+  if(!S.done)return needRun(v);
+  const R=S.R;
+  const detail={
+   staff:()=>tbl(['Warehouse','Shift','Orders','Load','Pickers','Extra needed','Delay hours'],R.segs.staff.slice(0,6).map(s=>[s.wh,s.shiftName,s.orders,pc(s.util),s.staff,'+'+s.need,Math.round(s.hours)]),[2,3,4,5,6]),
+   stock:()=>tbl(['SKU','Nearest warehouse lacks it','Far-shipped orders','Delay hours','Cumulative share'],R.segs.stock.slice(0,8).map(s=>[s.name,s.nearWh,s.orders,Math.round(s.hours),pc(s.cum)]),[2,3,4])+`<p class="meta" style="margin-top:8px">Share of each warehouse's local demand shipped from elsewhere: ${R.segs.near.slice(0,4).map(n=>`${esc(n.name)} ${pc(n.share)}`).join(', ')}.</p>`,
+   batch:()=>tbl(['Warehouse','Truck every','Average dispatch wait','Delay hours'],R.segs.batch.map(b=>[b.wh,b.cutoff+'h',b.meanWait.toFixed(1)+'h',Math.round(b.hours)]),[1,2,3]),
+   carrier:()=>tbl(['Carrier','Zone','Orders','Average last mile','Delay hours'],R.segs.car.slice(0,6).map(s=>[s.car,s.zone,s.orders,s.meanLast.toFixed(1)+'h',Math.round(s.hours)]),[2,3,4])
+  };
+  function tbl(h,rows,nums){return `<div class="tblwrap"><table class="tbl"><thead><tr>${h.map((x,i)=>`<th class="${nums.includes(i)?'n':''}">${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map((x,i)=>`<td class="${nums.includes(i)?'n':''}">${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
+  v.innerHTML=`<h1 class="lede">Four causes explain ${pc(1-R.otherShare)} of the delay hours.</h1>
+   <p class="sub">Each late order's delay is split across the stages where it spent more time than the network benchmark. Causes are ranked by the hours they explain.</p>`+
+   R.causes.map(c=>`<div class="cause"><div class="cause-top"><div class="pctbig">${pc(c.share)}</div><div>
+     <h3>${esc(c.title)}</h3><p class="hl">${esc(c.headline)}.</p>
+     <div class="meter"><i style="width:${c.share*100}%"></i></div>
+     <p class="meta">${Math.round(c.hours).toLocaleString('en-IN')} delay hours · ${c.affected.toLocaleString('en-IN')} orders touched · ${pc(c.lateWith)} late with this cause versus ${pc(c.lateWithout)} without (${c.lift.toFixed(1)}× more likely)</p>
+     <details class="plain"><summary>See the evidence</summary>${detail[c.id]()}</details></div></div></div>`).join('')+
+   `<div class="cause"><div class="cause-top"><div class="pctbig">${pc(R.otherShare)}</div><div><h3>Unexplained</h3><p class="meta">Normal variation that none of the four causes accounts for.</p></div></div></div>
+    <p class="fine">Method in this demo: stage-level attribution against network benchmarks. A production deployment would add a gradient-boosted model with SHAP values and a check against similar on-time orders to confirm causality.</p>`;
+}
+
+/* ---------- fix ---------- */
+const LEVERS=[
+ {id:'staff',title:'Add pickers to overloaded shifts',risk:'medium',unit:v=>`+${v} per shift`,min:0,max:15,step:1},
+ {id:'sku',title:'Rebalance stock for the top SKUs',risk:'medium',unit:v=>`${v} SKUs`,min:0,max:30,step:1},
+ {id:'dispatch',title:'Shorten the dispatch cycle',risk:'medium',unit:v=>v>=S.maxCut?'No change':`Every ${v}h`,min:1,max:null,step:1},
+ {id:'carrier',title:'Move last-mile orders to a better carrier',risk:'high',unit:v=>`${v}% of affected orders`,min:0,max:100,step:10},
+ {id:'eta',title:'Pad promised dates for far-shipped orders',risk:'low',unit:v=>`+${v}h`,min:0,max:12,step:1}
+];
+const RISKT={low:'Low risk · applies automatically',medium:'Needs manager approval',high:'High risk · needs manager approval'};
+function hintFor(id){const R=S.R,lv=S.lv;
+ if(id==='staff'){const s=R.segs.staff[0];return s?`Worst shift is ${s.wh} ${s.shiftName} at ${pc(s.util)} load. It needs about ${s.need} more pickers to reach 85%. Each overloaded shift gets up to the number you set, capped at what it needs.`:'No overloaded shifts.'}
+ if(id==='sku'){const k=R.segs.stock.slice(0,lv.sku);return lv.sku?`Stocking these ${lv.sku} SKUs closer to demand covers ${pc(k[k.length-1].cum)} of far-shipment delay hours.`:'Moves stock for the SKUs that most often force a far-warehouse shipment.'}
+ if(id==='dispatch'){const b=R.segs.batch[0];return b?`${b.wh} currently sends trucks every ${b.cutoff} hours. More trips cost more, so the tool counts the extra truck runs.`:'No slow dispatch cycles.'}
+ if(id==='carrier'){const s=R.segs.car[0];return s?`${s.car} is slow in ${R.segs.car.map(x=>x.zone).join(', ')}. Shifting orders to an alternative carrier assumes it matches the network average.`:'No weak carrier zones.'}
+ return 'Changes the date shown to customers only. Orders will not arrive faster, but fewer will arrive after the promise. Padding too much can cost conversions.'}
+function rFix(v){
+  if(!S.done)return needRun(v);
+  v.innerHTML=`<div class="fixgrid"><div>
+   <h1 class="lede">Move the sliders and watch late orders change.</h1>
+   <div class="fixbar"><button class="btn primary" id="useRec">Use the agent's recommended plan</button><button class="btn" id="resetLv">Reset</button></div>
+   ${LEVERS.map(L=>`<div class="lever" id="lv-${L.id}"><div class="lever-h"><label for="in-${L.id}">${L.title}</label><output id="out-${L.id}"></output></div>
+     <input type="range" id="in-${L.id}" min="${L.min}" max="${L.max??S.maxCut}" step="${L.step}" value="${S.lv[L.id]}">
+     <p class="hint" id="hint-${L.id}"></p><div class="lever-foot" id="foot-${L.id}"></div></div>`).join('')}
+  </div><aside class="sumpanel" id="sum"></aside></div>`;
+  LEVERS.forEach(L=>{$('#in-'+L.id).oninput=e=>{S.lv[L.id]=+e.target.value;refreshFix(false)}});
+  $('#useRec').onclick=()=>{S.lv={...S.rec};LEVERS.forEach(L=>$('#in-'+L.id).value=S.lv[L.id]);addLog('Recommendation agent','Recommended plan loaded into the simulator.');refreshFix(true)};
+  $('#resetLv').onclick=()=>{S.lv={staff:0,sku:0,dispatch:S.maxCut,carrier:0,eta:0};LEVERS.forEach(L=>$('#in-'+L.id).value=S.lv[L.id]);refreshFix(true)};
+  refreshFix(true);
+}
+const atBase=id=>id==='dispatch'?S.lv.dispatch>=S.maxCut:S.lv[id]===0;
+function refreshFix(feet){
+  const R=S.R,p=project(R,S.lv),base=R.lateRate;
+  LEVERS.forEach(L=>{$('#out-'+L.id).textContent=L.unit(S.lv[L.id]);$('#hint-'+L.id).textContent=hintFor(L.id);if(feet)footFor(L)});
+  $('#sum').innerHTML=`<h2>Projected result</h2><div class="before-after"><span class="a">${pc(p.lateRate,1)}</span><span class="b">${pc(base,1)}</span></div><p class="meta" style="margin:0">of orders late</p>
+   <dl class="kv"><dt>Late orders avoided each month</dt><dd>${Math.round(p.prevented).toLocaleString('en-IN')}</dd><dt>Delay hours left</dt><dd>${Math.round(p.hours).toLocaleString('en-IN')}</dd><dt>Estimated saving per month</dt><dd>${inr(p.saving)}</dd><dt>Estimated cost per month</dt><dd>${inr(p.cost)}</dd><dt>Net per month</dt><dd style="color:${p.net>=0?'var(--good)':'var(--bad)'}">${inr(p.net)}</dd></dl>
+   <p class="fine">Illustrative assumptions: ₹${COST.lateOrder} cost per late order, ₹${COST.staffShift} per picker shift, ₹${COST.skuMove.toLocaleString('en-IN')} per SKU moved, ₹${COST.trip.toLocaleString('en-IN')} per extra truck run, ₹${COST.carrierOrder} extra per re-routed order. Volumes are scaled from the sample to a month. Replace with your real rates.</p>`;
+}
+function footFor(L){
+  const st=S.appr[L.id]||'none',el=$('#foot-'+L.id);
+  const chips={none:'Not submitted',pending:'Waiting for approval',approved:'Approved',rejected:'Rejected',auto:'Applied automatically'};
+  let b='';
+  if(L.risk==='low'){ if(st==='auto')b=`<button class="btn small" data-a="revert">Revert</button>`;else b=`<button class="btn small primary" data-a="auto" ${atBase(L.id)?'disabled':''}>Apply automatically</button>`}
+  else if(st==='pending'){ b=S.role==='manager'?`<button class="btn small good" data-a="approve">Approve</button><button class="btn small danger" data-a="reject">Reject</button>`:`<span class="meta">Switch to Operations manager (top right) to approve.</span>`}
+  else if(st==='approved'){b=`<button class="btn small" data-a="revert">Revert</button>`}
+  else b=`<button class="btn small primary" data-a="submit" ${atBase(L.id)?'disabled':''}>Submit for approval</button>`;
+  el.innerHTML=`<span class="chip ${st}">${chips[st]}</span><span class="risk">${RISKT[L.risk]}</span><span style="flex:1"></span>${b}`;
+  el.querySelectorAll('button').forEach(btn=>btn.onclick=()=>act(L,btn.dataset.a));
+}
+function act(L,a){
+  const val=L.unit(S.lv[L.id]);
+  const m={submit:['pending','Orchestrator',`Submitted "${L.title}" (${val}) for manager approval.`],auto:['auto','Orchestrator',`Applied "${L.title}" (${val}) automatically as a low-risk change.`],
+    approve:['approved',S.role==='manager'?'Operations manager':'Manager',`Approved "${L.title}" (${val}).`],reject:['rejected','Operations manager',`Rejected "${L.title}" (${val}).`],revert:['none','Orchestrator',`Reverted "${L.title}".`]}[a];
+  S.appr[L.id]=m[0];addLog(m[1],m[2]);footFor(L);toast(m[2]);
+}
+
+/* ---------- ask ---------- */
+function ctx(){const R=S.R,p=project(R,S.lv),rp=project(R,S.rec);
+ return JSON.stringify({orders:R.N,lateRatePct:+(R.lateRate*100).toFixed(1),avgLatenessHours:+R.avgLate.toFixed(1),
+  causes:R.causes.map(c=>({cause:c.title,sharePct:+(c.share*100).toFixed(1),finding:c.headline,lateWithCausePct:+(c.lateWith*100).toFixed(0),lateWithoutPct:+(c.lateWithout*100).toFixed(0)})),
+  worstStaffShifts:R.segs.staff.slice(0,3).map(s=>({wh:s.wh,shift:s.shiftName,loadPct:Math.round(s.util*100),pickers:s.staff,extraNeeded:s.need})),
+  topSkus:R.segs.stock.slice(0,5).map(s=>({sku:s.name,nearestWarehouseLacksIt:s.nearWh})),
+  slowDispatch:R.segs.batch.map(b=>({wh:b.wh,truckEveryHours:b.cutoff})),weakCarrierZones:R.segs.car.map(s=>({carrier:s.car,zone:s.zone,lastMileHours:+s.meanLast.toFixed(1)})),
+  simulatorNow:{levers:S.lv,projectedLateRatePct:+(p.lateRate*100).toFixed(1),netMonthlyINR:Math.round(p.net)},
+  recommendedPlan:{levers:S.rec,projectedLateRatePct:+(rp.lateRate*100).toFixed(1),netMonthlyINR:Math.round(rp.net)}});}
+const CHIPS=['What is the biggest cause of delays?','What should we fix first?','Why is the evening shift a problem?','What are the risks of changing carriers?'];
+function rAsk(v){
+  if(!S.done)return needRun(v);
+  v.innerHTML=`<div class="chat"><h1 class="lede">Ask the agent about this analysis.</h1><p class="sub">Answers come from the numbers in this run, not from general knowledge.</p>
+   <div class="chips">${CHIPS.map(c=>`<button data-q="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+   <div class="msgs" id="msgs"></div>
+   <div class="askbar"><textarea id="q" rows="2" placeholder="Ask about a cause, a warehouse or a fix"></textarea><button class="btn primary" id="send">Ask</button></div></div>`;
+  drawMsgs();
+  document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>ask(b.dataset.q));
+  $('#send').onclick=()=>{const t=$('#q').value.trim();if(t){$('#q').value='';ask(t)}};
+  $('#q').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#send').click()}};
+}
+function drawMsgs(){const m=$('#msgs');if(!m)return;m.innerHTML='';S.chat.forEach(x=>{const d=document.createElement('div');d.className='msg '+(x.r==='u'?'u':'a');d.textContent=x.t;m.appendChild(d)})}
+function localAnswer(){const R=S.R,t=R.causes[0];return `The biggest cause is "${t.title.toLowerCase()}" at ${pc(t.share)} of delay hours. ${t.headline}. The live Q&A isn't available in this view, so this is the summary from the analysis. See the Root causes tab for the evidence.`}
+async function ask(q){
+  if(S.busy)return;S.busy=true;S.chat.push({r:'u',t:q});S.chat.push({r:'a',t:'Thinking…'});drawMsgs();
+  const idx=S.chat.length-1;
+  try{
+    const sample=window.claude?await window.claude.use('sample'):null;
+    if(!sample){S.chat[idx].t=localAnswer()}
+    else{
+      const hist=S.chat.slice(0,-2).slice(-6).map(x=>(x.r==='u'?'User: ':'Agent: ')+x.t).join('\n');
+      const prompt=`You are DelayLens, an operations analyst agent for an e-commerce company with late deliveries despite enough logistics capacity. Answer using ONLY the analysis data below. Be specific, cite figures from the data, and answer in under 130 words in plain sentences with no headings or markdown. If the data cannot answer, say so and name the data that would help. Money is in Indian rupees. Actions that change staffing, stock, dispatch or carriers need a manager's approval.\n\nANALYSIS DATA:\n${ctx()}\n\nCONVERSATION SO FAR:\n${hist||'(none)'}\n\nUSER QUESTION: ${q}`;
+      await sample(prompt,{cache:false,onText:({text})=>{S.chat[idx].t=text;drawMsgs()}});
+    }
+  }catch(e){S.chat[idx].t=e&&e.code==='not_granted'?localAnswer():'The agent could not answer just now. '+(e&&e.code==='rate_limited'?'Too many questions in a short time. Wait a moment and try again.':'Try again in a moment.')}
+  S.busy=false;drawMsgs();
+}
+
+/* ---------- audit ---------- */
+function rAudit(v){
+  v.innerHTML=`<h1 class="lede">Every agent action and approval is recorded.</h1><p class="sub">Use this trail to review who approved a change and what the numbers looked like at the time.</p>`+
+   (S.log.length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>Time</th><th>Actor</th><th>Action</th></tr></thead><tbody>${S.log.slice().reverse().map(l=>`<tr><td>${l.t}</td><td>${esc(l.who)}</td><td>${esc(l.text)}</td></tr>`).join('')}</tbody></table></div>`:`<div class="empty">Nothing recorded yet. Run the analysis to start the trail.</div>`);
+}
+
+$('#runBtn').onclick=runAnalysis;
+$('#role').onchange=e=>{S.role=e.target.value;addLog('System','Role changed to '+(S.role==='manager'?'Operations manager':'Operations analyst')+'.');if(S.tab==='fix'&&S.done)LEVERS.forEach(footFor)};
+render();
+</script></body></html>
